@@ -1,11 +1,13 @@
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "yield.h"
 
 #ifndef NUM_THREADS
-#define NUM_THREADS 2
+#define NUM_THREADS 4
 #endif
 
 static void _slow();
@@ -14,24 +16,174 @@ static void _slow();
 void slow() { _slow(); }
 #endif
 
-/* Global variables for thread implementation */
-static int current_thread = 1;
-static int main_frame; /* first activation record */
-int thread_ebp[NUM_THREADS];
-int thread_ret[NUM_THREADS];
+/* Thread #0 is the "main" process. We'll return to that at sthread_init(), so we
+ * don't schedule it at NOT_MORE 
+ */
+#define NOT_MORE(a, b) (a < b ? a : 1)
 
-void yield()
+/* Create a stack with 64k */
+#define DEFAULT_GROW_SIZE 64*1024
+
+
+typedef void (*fun_t)(void *);
+typedef void *arg_t;
+
+enum thread_status { TS_NOTSPAWNED = 0, TS_RUNNING = 1, TS_NOTREADY = 0x10, TS_NOTHINGYET = 0x11, TS_FINISHED = 0x18};
+
+/* Global variables for thread implementation */
+static int num_threads = 2;
+static int current_thread = 0;
+static int main_frame; /* first activation record */
+void *thread_ebp[NUM_THREADS + 1];
+void *thread_ret[NUM_THREADS + 1];
+
+static struct sthread_info {
+	void (*f_ptr)(void *);
+	void *arg;
+	int started;
+} thread_info[NUM_THREADS];
+
+
+int sthread_func(int tid, fun_t f, arg_t a)
 {
-	int a[10];
+	if(thread_info[tid].started == TS_RUNNING)
+		return EPERM;
+
+	thread_info[tid].f_ptr = f;
+	thread_info[tid].arg = a;
+	thread_info[tid].started = TS_NOTSPAWNED;
+	return 0;
+}
+
+int sthread_init(const int n)
+{
+	int i;
+
+	if(n > NUM_THREADS) {
+		return EINVAL;
+	}
+
+	num_threads = n + 1;
+
+	for(i = 0; i < num_threads; i++)
+	{
+		thread_info[i].f_ptr = NULL;
+		thread_info[i].started = TS_NOTHINGYET;
+	}
+	return 0;
+}
+
+int sthread_start()
+{
+	int i;
+	current_thread = 0;
+	for(i = NOT_MORE(current_thread + 1, num_threads); thread_info[current_thread].started & TS_NOTREADY && i != current_thread; i = NOT_MORE(current_thread + 1, num_threads))
+	{
+		current_thread = i;
+		yield();
+	}
+	for(i = 1; i < num_threads; i++)
+	{
+		current_thread = i;
+		/* Spawn each thread, in case there were not enough yield's */
+		yield();
+	}
+}
+
+inline static void _save_context()
+{
+	int a[4];
+	a[0] = 0;
+	a[1] = 0;
+	a[2] = 0;
+	a[3] = 0;
+	printf("I am at %p\n", &a);
+	sleep(2);
+	thread_ebp[current_thread] = __builtin_frame_address(0);
+	thread_ret[current_thread] = __builtin_return_address(0);
+}
+
+inline static void _restore_context()
+{
+	int a[4];
+	a[0] = 0;
+	a[1] = 0;
+	a[2] = 0;
+	a[3] = 0;
+	printf("I am at %p\n", &a);
+	sleep(2);
+}
+
+inline static void new_yield()
+{
+	_save_context();
+	current_thread = NOT_MORE(current_thread + 1, num_threads);
+	_restore_context();
+}
+
+
+static void safeguard_launch() {
+	void *a[10];
+	/* Put an always-valid return address: sthread_start's (i.e. thread #0) */
+	a[12] = thread_ebp[0];
+	a[13] = thread_ret[0];
+	
+	thread_info[current_thread].started = TS_RUNNING;
+	(*thread_info[current_thread].f_ptr)(thread_info[current_thread].arg);
+	thread_info[current_thread].started = TS_FINISHED;
+}
+
+static void grow_stack_and_safeguard_launch(int size) {
+	char stack_grower[size];
+	stack_grower[size-1] = 0; /* If we couldn't grow up to here, this will segfault */
+	safeguard_launch();
+	/* This function does not: */ return;
+}
+
+inline static void __attribute__((always_inline)) old_yield() 
+{
+	static int i;
+	void * a[10];
 
 	thread_ebp[current_thread] = a[12];
 	thread_ret[current_thread] = a[13];
 
-	current_thread = (current_thread % 2) + 1;
+	/* We loop exactly once through our circular thread_info list.
+	 * If we find a ready thread (or loop the list completely) we stop.
+	 */
+	for(i = NOT_MORE(current_thread + 1, num_threads); thread_info[current_thread].started & TS_NOTREADY && i != current_thread; i = NOT_MORE(current_thread + 1, num_threads));
+	if(i == current_thread) {
+		/* No more threads. */
+		errno = EBUSY;
+		return;
+	}
+	current_thread = i;
+
+	/*	
+	do {
+		current_thread = NOT_MORE(current_thread + 1, num_threads);
+	} while(thread_info[current_thread].started & TS_NOTREADY);
+	*/
+
+	if(!thread_info[current_thread].started) {
+		/* Grow the stack to fit a new thread */
+		grow_stack_and_safeguard_launch(DEFAULT_GROW_SIZE);
+		return;
+	}
 
 	a[12] = thread_ebp[current_thread];
 	a[13] = thread_ret[current_thread];
 }
+
+#ifdef NEWIMPL
+void yield() {
+	new_yield();
+}
+#else
+void yield() {
+	old_yield();
+}
+#endif
 
 
 
