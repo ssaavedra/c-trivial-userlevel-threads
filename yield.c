@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include "yield.h"
+#include "show_stack.c"
 
 #ifndef NUM_THREADS
 #define NUM_THREADS 4
@@ -75,62 +76,29 @@ int sthread_init(const int n)
 
 int sthread_start()
 {
-	int i;
+	int i, status = 1;
 	current_thread = 0;
-	for(i = NOT_MORE(current_thread + 1, num_threads); thread_info[current_thread].started & TS_NOTREADY && i != current_thread; i = NOT_MORE(current_thread + 1, num_threads))
+	for(i = NOT_MORE(current_thread + 1, num_threads);
+			thread_info[i].started < TS_NOTREADY
+			&& i != current_thread; i = NOT_MORE(i + 1, num_threads))
 	{
-		current_thread = i;
+		status = 0;
 		yield();
 	}
-	for(i = 1; i < num_threads; i++)
-	{
-		current_thread = i;
-		/* Spawn each thread, in case there were not enough yield's */
-		yield();
-	}
-}
-
-inline static void _save_context()
-{
-	int a[4];
-	a[0] = 0;
-	a[1] = 0;
-	a[2] = 0;
-	a[3] = 0;
-	printf("I am at %p\n", &a);
-	sleep(2);
-	thread_ebp[current_thread] = __builtin_frame_address(0);
-	thread_ret[current_thread] = __builtin_return_address(0);
-}
-
-inline static void _restore_context()
-{
-	int a[4];
-	a[0] = 0;
-	a[1] = 0;
-	a[2] = 0;
-	a[3] = 0;
-	printf("I am at %p\n", &a);
-	sleep(2);
-}
-
-inline static void new_yield()
-{
-	_save_context();
-	current_thread = NOT_MORE(current_thread + 1, num_threads);
-	_restore_context();
+	return status;
 }
 
 
 static void safeguard_launch() {
 	void *a[10];
-	/* Put an always-valid return address: sthread_start's (i.e. thread #0) */
-	a[12] = thread_ebp[0];
-	a[13] = thread_ret[0];
-	
+
 	thread_info[current_thread].started = TS_RUNNING;
 	(*thread_info[current_thread].f_ptr)(thread_info[current_thread].arg);
 	thread_info[current_thread].started = TS_FINISHED;
+
+	/* Put an always-valid return address: sthread_start's (i.e. thread #0) */
+	a[10] = thread_ebp[0];
+	a[11] = thread_ret[0];
 }
 
 static void grow_stack_and_safeguard_launch(int size) {
@@ -140,18 +108,18 @@ static void grow_stack_and_safeguard_launch(int size) {
 	/* This function does not: */ return;
 }
 
-inline static void __attribute__((always_inline)) old_yield() 
+void yield() 
 {
 	static int i;
 	void * a[10];
 
-	thread_ebp[current_thread] = a[12];
-	thread_ret[current_thread] = a[13];
+	thread_ebp[current_thread] = a[10];
+	thread_ret[current_thread] = a[11];
 
 	/* We loop exactly once through our circular thread_info list.
 	 * If we find a ready thread (or loop the list completely) we stop.
 	 */
-	for(i = NOT_MORE(current_thread + 1, num_threads); thread_info[current_thread].started & TS_NOTREADY && i != current_thread; i = NOT_MORE(current_thread + 1, num_threads));
+	for(i = NOT_MORE(current_thread + 1, num_threads); thread_info[i].started & TS_NOTREADY && i != current_thread; i = NOT_MORE(i + 1, num_threads));
 	if(i == current_thread) {
 		/* No more threads. */
 		errno = EBUSY;
@@ -166,24 +134,18 @@ inline static void __attribute__((always_inline)) old_yield()
 	*/
 
 	if(!thread_info[current_thread].started) {
-		/* Grow the stack to fit a new thread */
+		/* Grow the stack to fit a new thread  and launch it */
 		grow_stack_and_safeguard_launch(DEFAULT_GROW_SIZE);
+		/* This is not a return point. The former will never return.
+		 * Having the "return" word written, however, allows us to make
+		 * a breakpoint in order to check this statement.
+		 */
 		return;
 	}
 
-	a[12] = thread_ebp[current_thread];
-	a[13] = thread_ret[current_thread];
+	a[10] = thread_ebp[current_thread];
+	a[11] = thread_ret[current_thread];
 }
-
-#ifdef NEWIMPL
-void yield() {
-	new_yield();
-}
-#else
-void yield() {
-	old_yield();
-}
-#endif
 
 
 
