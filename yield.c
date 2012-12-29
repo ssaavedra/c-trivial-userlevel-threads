@@ -1,10 +1,24 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #include "yield.h"
+
+#ifndef EBP_ADDR_IDX
+
+#if __LP64__
+#define EBP_ADDR_IDX 10
+#define RET_ADDR_IDX 11
+#else
+#define EBP_ADDR_IDX 12
+#define RET_ADDR_IDX 13
+#endif
+
+#endif
+
 
 #ifndef NUM_THREADS
 #define NUM_THREADS 4
@@ -25,9 +39,6 @@ void slow() { _slow(); }
 #define DEFAULT_GROW_SIZE 64*1024
 
 
-typedef void (*fun_t)(void *);
-typedef void *arg_t;
-
 enum thread_status { TS_NOTSPAWNED = 0, TS_RUNNING = 1, TS_NOTREADY = 0x10, TS_NOTHINGYET = 0x11, TS_FINISHED = 0x18};
 
 /* Global variables for thread implementation */
@@ -44,7 +55,7 @@ static struct sthread_info {
 } thread_info[NUM_THREADS];
 
 
-int sthread_func(int tid, fun_t f, arg_t a)
+int sthread_func(const int tid, const fun_t f, const arg_t a)
 {
 	if(thread_info[tid].started == TS_RUNNING)
 		return EPERM;
@@ -96,8 +107,8 @@ static void safeguard_launch() {
 	thread_info[current_thread].started = TS_FINISHED;
 
 	/* Put an always-valid return address: sthread_start's (i.e. thread #0) */
-	a[10] = thread_ebp[0];
-	a[11] = thread_ret[0];
+	a[EBP_ADDR_IDX] = thread_ebp[0];
+	a[RET_ADDR_IDX] = thread_ret[0];
 }
 
 static void grow_stack_and_safeguard_launch(int size) {
@@ -112,8 +123,8 @@ void yield()
 	static int i;
 	void * a[10];
 
-	thread_ebp[current_thread] = a[10];
-	thread_ret[current_thread] = a[11];
+	thread_ebp[current_thread] = a[EBP_ADDR_IDX];
+	thread_ret[current_thread] = a[RET_ADDR_IDX];
 
 	/* We loop exactly once through our circular thread_info list.
 	 * If we find a ready thread (or loop the list completely) we stop.
@@ -142,8 +153,8 @@ void yield()
 		return;
 	}
 
-	a[10] = thread_ebp[current_thread];
-	a[11] = thread_ret[current_thread];
+	a[EBP_ADDR_IDX] = thread_ebp[current_thread];
+	a[RET_ADDR_IDX] = thread_ret[current_thread];
 }
 
 
