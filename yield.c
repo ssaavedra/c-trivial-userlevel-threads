@@ -36,7 +36,7 @@ void slow() { _slow(); }
 #define NOT_MORE(a, b) (a < b ? a : 1)
 
 /* Create a stack with 64k */
-#define DEFAULT_GROW_SIZE 64*1024
+#define DEFAULT_GROW_SIZE 1024*1024
 
 
 enum thread_status { TS_NOTSPAWNED = 0, TS_RUNNING = 1, TS_NOTREADY = 0x10, TS_NOTHINGYET = 0x11, TS_FINISHED = 0x18};
@@ -87,13 +87,13 @@ int sthread_init(const int n)
 int sthread_start()
 {
 	int i, status = 1;
-	current_thread = 0;
-	for(i = NOT_MORE(current_thread + 1, num_threads);
-			thread_info[i].started < TS_NOTREADY
-			&& i != current_thread; i = NOT_MORE(i + 1, num_threads))
-	{
+	i = NOT_MORE(current_thread + 1, num_threads);
+
+	while(thread_info[i].started < TS_NOTREADY) {
 		status = 0;
+		current_thread = 0;
 		yield();
+		i = NOT_MORE(i + 1, num_threads);
 	}
 	return status;
 }

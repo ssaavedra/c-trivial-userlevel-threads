@@ -1,5 +1,5 @@
 
-CFLAGS ?= -m32
+CFLAGS ?= -m32 -g
 
 all: main
 run: force main
@@ -7,6 +7,9 @@ run: force main
 
 
 main: main.c yield.o
+	$(CC) $(CFLAGS) $^ -o $@
+
+factorial: factorial.c yield.o
 	$(CC) $(CFLAGS) $^ -o $@
 
 yield.o: yield.c
