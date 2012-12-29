@@ -5,7 +5,6 @@
 #include <unistd.h>
 
 #include "yield.h"
-#include "show_stack.c"
 
 #ifndef NUM_THREADS
 #define NUM_THREADS 4
