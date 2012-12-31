@@ -10,8 +10,8 @@
 #ifndef EBP_ADDR_IDX
 
 #if __LP64__
-#define EBP_ADDR_IDX 10
-#define RET_ADDR_IDX 11
+#define EBP_ADDR_IDX 12
+#define RET_ADDR_IDX 13
 #else
 #define EBP_ADDR_IDX 12
 #define RET_ADDR_IDX 13
@@ -37,6 +37,19 @@ void slow() { _slow(); }
 
 /* Create a stack with 64k */
 #define DEFAULT_GROW_SIZE 1024*1024
+
+
+/* Tiny logger */
+enum log_level { LOG_DEBUG };
+
+#ifdef DEBUG
+#if (DEBUG > 0)
+#define logf(lvl, ...) do { if(DEBUG > lvl) { printf(__VA_ARGS__); } } while(0)
+#endif
+#else
+#define logf(lvl, ...)
+#endif
+
 
 
 enum thread_status { TS_NOTSPAWNED = 0, TS_RUNNING = 1, TS_NOTREADY = 0x10, TS_NOTHINGYET = 0x11, TS_FINISHED = 0x18};
@@ -93,7 +106,12 @@ int sthread_start()
 		status = 0;
 		current_thread = 0;
 		yield();
-		i = NOT_MORE(i + 1, num_threads);
+		i = NOT_MORE(current_thread + 1, num_threads);
+		logf(LOG_DEBUG, "We are at thread %d and its status will be checked (%d)\n", i, thread_info[i].started);
+	}
+	logf(LOG_DEBUG, "No more threads!\n");
+	for(i = 1; i < num_threads; i++) {
+		logf(LOG_DEBUG, "Thread %d status: %d\n", i, thread_info[i].started);
 	}
 	return status;
 }
@@ -118,7 +136,7 @@ static void grow_stack_and_safeguard_launch(int size) {
 	/* This function does not: */ return;
 }
 
-void yield() 
+static void _yield() 
 {
 	static int i;
 	void * a[10];
@@ -155,6 +173,26 @@ void yield()
 
 	a[EBP_ADDR_IDX] = thread_ebp[current_thread];
 	a[RET_ADDR_IDX] = thread_ret[current_thread];
+
+}
+
+void yield() {
+	/* This creates an artificial frame atop, in order
+	 * to restore the %sp value too. 
+	 * If we didn't call this, %sp would have any other value.
+	 *
+	 * This is the same than adding something like
+	 * push %esp
+	 * mov %esp,%ebp
+	 * before the real function (push %esp ...) starts
+	 * and
+	 * mov %ebp,%esp  # \
+	 * pop %esp       # -- or IA-32 leave
+	 * push &&yield_return
+	 * ret
+	 * ret
+	 */
+	_yield();
 }
 
 
