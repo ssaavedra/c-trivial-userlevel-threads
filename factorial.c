@@ -4,6 +4,7 @@
 
 #include "yield.h"
 
+/*
 int yielding_factorial(int n, int m, int orig)
 {
 	if(n == 0) {
@@ -22,7 +23,7 @@ void _factorial(void *arg)
 	printf("Starting factorial(%d)...\n", n);
 	yielding_factorial(n, 1, n);
 }
-
+*/
 
 struct factorial {
 	int wanted;
