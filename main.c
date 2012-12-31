@@ -32,7 +32,6 @@ void t1(void *arg)
 		printf("I am thread 1 and I'm looping at %d\n", i);
 		yield();
 	}
-	yield();
 	printf("t1 ended!\n");
 }
 
