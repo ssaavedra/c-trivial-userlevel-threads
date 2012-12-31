@@ -12,6 +12,9 @@ main: main.c yield.o
 factorial: factorial.c yield.o
 	$(CC) $(CFLAGS) $^ -o $@
 
+dbuf: dbuf.c yield.o
+	$(CC) $(CFLAGS) $^ -o $@ -lrt
+
 yield.o: yield.c
 	$(CC) $(CFLAGS) $^ -c -o $@
 
