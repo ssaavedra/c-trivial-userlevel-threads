@@ -1,3 +1,17 @@
+/**
+ * Simple User-level Threads implementation in raw C compatible with IA-32 and
+ * x86_64 instruction sets for the common caller/callee convention with frame
+ * pointer enabled.
+ *
+ * This implementation will not work when compiled in GCC with the
+ * -fno-frame-pointer compilation flag.
+ *
+ * Author: Santiago Saavedra <santiago.saavedral@udc.es>
+ * Developed for Subject: Design and Implementation of Operating Systems.
+ * Taught by: Ramón P. Otero and Alberto Illobre.
+ *
+ * Universidade da Coruña - 2012-2013
+ */
 
 #include <errno.h>
 #include <stdio.h>
@@ -44,7 +58,7 @@ enum log_level { LOG_DEBUG };
 
 #ifdef DEBUG
 #if (DEBUG > 0)
-#define logf(lvl, ...) do { if(DEBUG > lvl) { printf(__VA_ARGS__); } } while(0)
+#define logf(lvl, ...) do { if(DEBUG > lvl) { fprintf(stderr, __VA_ARGS__); } } while(0)
 #endif
 #else
 #define logf(lvl, ...)
