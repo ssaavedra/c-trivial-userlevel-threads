@@ -136,8 +136,6 @@ int sthread_wait_all()
 
 int sthread_join(sthread_t thread, void **retval)
 {
-	if(thread_info[thread].started == TS_NOTSPAWNED)
-		return ENOENT;
 	while(thread_info[thread].started != TS_FINISHED) {
 		yield();
 	}

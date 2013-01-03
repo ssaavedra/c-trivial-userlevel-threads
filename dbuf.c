@@ -1,5 +1,19 @@
-/* Double-buffering cp.
- * To be used only on files
+/**
+ * Example of usage for the sthreads implementation.
+ *
+ * File: dbuf.c
+ *
+ * This is a double-buffered copy which uses two copy-workers and aio
+ * (see <aio.h>) in order to copy files.
+ * It is very simple, and it doesn't accept any options, nor works for
+ * anything outside a regular file (and will exit if it finds you trying
+ * to copy to/form anything but a file).
+ *
+ * Author: Santiago Saavedra <santiago.saavedral@udc.es>
+ * Developed for Subject: Design and Implementation of Operating Systems.
+ * Taught by: Ramón P. Otero and Alberto Illobre.
+ *
+ * Universidade da Coruña - 2012-2013
  */
 
 #include <aio.h>
@@ -24,7 +38,7 @@ static struct mydata {
 	long next_request;
 } _tmp_data;
 
-void buffer_worker(void *unused_arg)
+void *buffer_worker(void *unused_arg)
 {
 	char buffer[BUF_SIZE];
 	off_t real_read_bytes;
@@ -78,6 +92,8 @@ void buffer_worker(void *unused_arg)
 void copy_double_buffered(char *src, char *dst)
 {
 	struct stat s;
+	sthread_t th1, th2;
+	void *r1, *r2;
 
 	_tmp_data.path_src = src;
 	_tmp_data.path_dst = dst;
@@ -97,10 +113,11 @@ void copy_double_buffered(char *src, char *dst)
 
 	_tmp_data.total_bytes = s.st_size;
 
-	sthread_init(2);
-	sthread_func(1, buffer_worker, NULL);
-	sthread_func(2, buffer_worker, NULL);
-	sthread_start();
+	sthread_init();
+	sthread_create(&th1, buffer_worker, NULL);
+	sthread_create(&th2, buffer_worker, NULL);
+	sthread_join(th1, &r1);
+	sthread_join(th2, &r2);
 
 	printf("FINISHED. Total bytes copied: %ld\n", _tmp_data.read_bytes);
 
@@ -117,16 +134,30 @@ int check_args(int argc, char *argv[])
 		return 0;
 	}
 
-	for(i = 1; i < 3; i++) {
-		code = stat(argv[i], &s);
-		if(code == -1) {
-			perror("stat");
-			return 0;
-		}
-
-		if(!S_ISREG(s.st_mode))
-			return 0;
+	code = stat(argv[0], &s);
+	if(code == -1) {
+		perror("stat");
+		return 0;
 	}
+
+	if(!S_ISREG(s.st_mode))
+		return 0;
+
+	code = stat(argv[1], &s);
+	if(code == -1 && errno == ENOENT) {
+		errno = 0;
+		return 1; // It does not exist
+	}
+
+	if(code == -1) {
+		printf("errno = %d\n", errno);
+		perror("stat");
+		return 0;
+	}
+
+	if(S_ISDIR(s.st_mode))
+		return 0;
+
 	return 1;
 }
 
