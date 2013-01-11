@@ -1,5 +1,7 @@
 
-CFLAGS ?= -m32 -g
+DEFINES ?= 
+
+CFLAGS ?= -m32 -g $(DEFINES)
 
 STRIP ?= /bin/true
 
