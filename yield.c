@@ -22,6 +22,8 @@
 #include "log.h"
 #include "yield.h"
 
+#include "sthread_relocate.c"
+
 #ifndef EBP_ADDR_IDX
 
 #if __LP64__
@@ -47,17 +49,23 @@
 enum thread_status { TS_NOTSPAWNED = 0, TS_RUNNING = 1, TS_NOTREADY = 0x10, TS_NOTHINGYET = 0x11, TS_FINISHED = 0x18, TS_JOINED = 0x1C};
 
 /* Global variables for thread implementation */
-int _sthread_num_threads = 1;
+static int _sthread_num_threads = 1;
 static int _initd = 0;
-int current_thread = 0;
+static int current_thread = 0;
 static void *thread_ebp[MAX_THREADS + 1];
 static void *thread_ret[MAX_THREADS + 1];
+
+static void (*reloc_save_default)(int, void**) = sthread_heap_save;
+static void (*reloc_restore_default)(int, void**) = sthread_heap_restore;
 
 static struct sthread_info {
 	sthread_fun_t f_ptr;
 	sthread_arg_t arg;
 	int started;
 	void *retval;
+	void *reloc_information;
+	void (*reloc_save)(int, void**);
+	void (*reloc_restore)(int, void**);
 } thread_info[MAX_THREADS];
 
 /* Get an available thread. If we can reuse an already-joined thread, we'll use
@@ -88,6 +96,10 @@ int sthread_create4(sthread_t *tid, const sthread_fun_t f, const sthread_arg_t a
 	thread_info[*tid].f_ptr = f;
 	thread_info[*tid].arg = a;
 	thread_info[*tid].started = TS_NOTSPAWNED;
+	thread_info[*tid].reloc_save = reloc_save_default;
+	thread_info[*tid].reloc_restore = reloc_restore_default;
+	thread_info[*tid].reloc_information = NULL;
+
 	if(yield_now)
 		yield();
 	return 0;
@@ -207,8 +219,12 @@ static void _yield()
 	while(__sync_lock_test_and_set(&_yield_mutex, 1));
 
 	if(current_thread > -1) {
-		thread_ebp[current_thread] = a[EBP_ADDR_IDX];
-		thread_ret[current_thread] = a[RET_ADDR_IDX];
+		if(thread_info[current_thread].reloc_save != NULL) {
+			(*thread_info[current_thread].reloc_save)(current_thread, &thread_info[current_thread].reloc_information);
+		} else {
+			thread_ebp[current_thread] = a[EBP_ADDR_IDX];
+			thread_ret[current_thread] = a[RET_ADDR_IDX];
+		}
 	}
 
 	/* We loop exactly once through our circular thread_info list.
@@ -229,19 +245,23 @@ static void _yield()
 	} while(thread_info[current_thread].started & TS_NOTREADY);
 	*/
 
-	if(!thread_info[current_thread].started) {
-		/* Grow the stack to fit a new thread  and launch it */
-		__sync_lock_release(&_yield_mutex);
-		grow_stack_and_safeguard_launch(DEFAULT_GROW_SIZE);
-		/* This is not a return point. The former will never return.
-		 * Having the "return" word written, however, allows us to make
-		 * a breakpoint in the debugger so we can check this statement.
-		 */
-		return;
-	}
+	if(thread_info[current_thread].reloc_restore != NULL) {
+		(*thread_info[current_thread].reloc_restore)(current_thread, &thread_info[current_thread].reloc_information);
+	} else {
+		if(!thread_info[current_thread].started) {
+			/* Grow the stack to fit a new thread  and launch it */
+			__sync_lock_release(&_yield_mutex);
+			grow_stack_and_safeguard_launch(DEFAULT_GROW_SIZE);
+			/* This is not a return point. The former will never return.
+			 * Having the "return" word written, however, allows us to make
+			 * a breakpoint in the debugger so we can check this statement.
+			 */
+			return;
+		}
 
-	a[EBP_ADDR_IDX] = thread_ebp[current_thread];
-	a[RET_ADDR_IDX] = thread_ret[current_thread];
+		a[EBP_ADDR_IDX] = thread_ebp[current_thread];
+		a[RET_ADDR_IDX] = thread_ret[current_thread];
+	}
 }
 
 void sthread_yield(int n) {

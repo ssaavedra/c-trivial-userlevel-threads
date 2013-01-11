@@ -90,7 +90,7 @@ int main()
 	sthread_start();
 	*/
 
-	sthread_auto_yield(1);
+	sthread_auto_yield(0);
 	sthread_create4(&th1, t1, NULL, 1);
 	sthread_create4(&th2, t2, NULL, 1);
 	sthread_wait_all();
