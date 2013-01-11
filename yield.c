@@ -227,6 +227,8 @@ static void _yield()
 		}
 	}
 
+	copy_stack_to_heap(a, thread_ebp[0]);
+
 	/* We loop exactly once through our circular thread_info list.
 	 * If we find a ready thread (or loop the list completely) we stop.
 	 */
@@ -251,12 +253,7 @@ static void _yield()
 		if(!thread_info[current_thread].started) {
 			/* Grow the stack to fit a new thread  and launch it */
 			__sync_lock_release(&_yield_mutex);
-			grow_stack_and_safeguard_launch(DEFAULT_GROW_SIZE);
-			/* This is not a return point. The former will never return.
-			 * Having the "return" word written, however, allows us to make
-			 * a breakpoint in the debugger so we can check this statement.
-			 */
-			return;
+			safeguard_launch();
 		}
 
 		a[EBP_ADDR_IDX] = thread_ebp[current_thread];
