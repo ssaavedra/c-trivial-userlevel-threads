@@ -43,6 +43,10 @@ libsthread.so: yield_s.o sthread_s.o
 	$(STRIP) -X -x -g $@
 
 
+clean:
+	rm -f main factorial dbuf yield.o sthread.o sthread_s.o yield_s.o sthread.a libsthread.so
+
+
 .PHONY: force
 force:
 	touch main.c

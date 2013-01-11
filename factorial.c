@@ -48,9 +48,11 @@ int factorial(struct factorial *tmp)
 int new_factorial(int n)
 {
 	if(n <= 0) {
+		yield();
 		return 1;
 	}
 
+	yield();
 	return n * new_factorial(n - 1);
 }
 	
