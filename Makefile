@@ -13,7 +13,7 @@ run: force main
 main: main.c yield.o sthread.o
 	$(CC) $(CFLAGS) $^ -o $@
 
-factorial: factorial.c yield.o
+factorial: factorial.c yield.o sthread.o
 	$(CC) $(CFLAGS) $^ -o $@
 
 dbuf: dbuf.c yield.o

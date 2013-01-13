@@ -37,7 +37,8 @@
 #define NOT_MORE(a, b) (a < b ? a : 0)
 
 /* Create a stack with 64k */
-#define DEFAULT_GROW_SIZE 1024*1024
+//#define DEFAULT_GROW_SIZE 1024*1024
+#define DEFAULT_GROW_SIZE 1024*1024 * 50
 
 
 #define DEBUG 10
@@ -199,6 +200,7 @@ static void _yield()
 	static int i;
 	void * a[10];
 
+	printf("T = %d Entering yield\n", current_thread);
 	if(_yield_mutex) {
 		logf(LOG_DEBUG, "RARE! Exiting from nested _yield!\n");
 		errno = EAGAIN;

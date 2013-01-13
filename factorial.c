@@ -19,8 +19,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "yield.h"
+#include "sthread.h"
 
+int *p[3];
 
 struct factorial {
 	int wanted;
@@ -47,13 +48,39 @@ int factorial(struct factorial *tmp)
 
 int new_factorial(int n)
 {
+	int i, j;
+
 	if(n <= 0) {
+		for(i = 1; i < 10000000; i++)
+		{
+			j += 23958.23*182935 * i ;
+		}
+		printf("T = %d Factorial de %d = yield %d\n", sthread_self(), n, (p[sthread_self()] - &i) / 1000000);
 		yield();
 		return 1;
 	}
 
-	yield();
-	return n * new_factorial(n - 1);
+	//yield();
+	return n + new_factorial(n - 1);
+}
+
+#define k 500000
+int clase_factorial(int n)
+{
+	int i;
+	p[sthread_self()] = &i;
+	for(;;) {
+		if(n == 12) {
+			n = k;
+		} else {
+			n = 12;
+		}
+		printf("T = %d Entrando en factorial(%d)\n", sthread_self(), n);
+		i = new_factorial(n);
+		printf("T = %d ", sthread_self());
+		printf("Factorial de %d = %d\n", n, i);
+	}
+	return i;
 }
 	
 
@@ -69,6 +96,7 @@ int main(int argc, char *argv[])
 
 	sthread_init(3);
 
+	/*
 	sthread_create4(&th1, (sthread_fun_t) factorial, fstr, 1);
 	sthread_create4(&th2, (sthread_fun_t) factorial, fstr + 1, 1);
 	sthread_create4(&th3, (sthread_fun_t) factorial, fstr + 2, 1);
@@ -76,12 +104,22 @@ int main(int argc, char *argv[])
 	sthread_join(th2, (void**) &r2);
 	sthread_join(th3, (void**) &r3);
 
-	sthread_create4(&th1, (sthread_fun_t) new_factorial, (void*) 5, 1);
-	sthread_create4(&th2, (sthread_fun_t) new_factorial, (void*) 6, 1);
-	sthread_create4(&th3, (sthread_fun_t) new_factorial, (void*) 9, 1);
+	sthread_create4(&th1, (sthread_fun_t) new_factorial, (void*) 12, 1);
+	sthread_create4(&th2, (sthread_fun_t) new_factorial, (void*) 12, 1);
+	sthread_create4(&th3, (sthread_fun_t) new_factorial, (void*) 25, 1);
 	sthread_join(th1, (void**) &r1);
 	sthread_join(th2, (void**) &r2);
 	sthread_join(th3, (void**) &r3);
+	*/
+
+	sthread_auto_yield(1);
+	sthread_create4(&th1, (sthread_fun_t) clase_factorial, (void*) 12, 1);
+	sthread_create4(&th2, (sthread_fun_t) clase_factorial, (void*) 12, 1);
+	sthread_create4(&th3, (sthread_fun_t) clase_factorial, (void*) 12, 1);
+	sthread_join(th1, (void**) &r1);
+	sthread_join(th2, (void**) &r2);
+	sthread_join(th3, (void**) &r3);
+
 
 	printf("f($1) = %d\nf($2) = %d\nf($3) = %d\n", r1, r2, r3);
 	printf("Work done.\n");
