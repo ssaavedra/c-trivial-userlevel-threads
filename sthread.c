@@ -222,5 +222,4 @@ void sthread_auto_yield(int value) {
 	sigaction(SIGALRM, &s, NULL);
 	alarm(1);
 }
-		
 

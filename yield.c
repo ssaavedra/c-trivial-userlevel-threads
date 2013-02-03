@@ -55,8 +55,13 @@ static int current_thread = 0;
 static void *thread_ebp[MAX_THREADS + 1];
 static void *thread_ret[MAX_THREADS + 1];
 
-static void (*reloc_save_default)(int, void**) = sthread_heap_save;
-static void (*reloc_restore_default)(int, void**) = sthread_heap_restore;
+
+static void sthread_stack_save(int, void**, void**);
+static void sthread_stack_restore(int, void**, void**);
+
+typedef void (*sthread_reloc_fun_t)(int /* current_thread */, void ** /* first frame */);
+static void (*reloc_save_default)(int, void**, void**) = sthread_stack_save;
+static void (*reloc_restore_default)(int, void**, void**) = sthread_stack_restore;
 
 static struct sthread_info {
 	sthread_fun_t f_ptr;
@@ -64,8 +69,8 @@ static struct sthread_info {
 	int started;
 	void *retval;
 	void *reloc_information;
-	void (*reloc_save)(int, void**);
-	void (*reloc_restore)(int, void**);
+	void (*reloc_save)(int, void**, void**);
+	void (*reloc_restore)(int, void**, void**);
 } thread_info[MAX_THREADS];
 
 /* Get an available thread. If we can reuse an already-joined thread, we'll use
@@ -116,6 +121,8 @@ int sthread_init()
 	_sthread_num_threads = 1;
 	thread_info[0].f_ptr = NULL;
 	thread_info[0].started = TS_RUNNING;
+	thread_info[0].reloc_save = sthread_stack_save;
+	thread_info[0].reloc_restore = sthread_stack_restore;
 	return 0;
 }
 
@@ -192,8 +199,13 @@ static void safeguard_launch() {
 	/* In this case, the values are deeper in the stack because we are
 	 * executing a function which has a return value (the f_ptr pointer).
 	 */
-	a[EBP_ADDR_IDX + 1] = thread_ebp[0];
-	a[RET_ADDR_IDX + 1] = thread_ret[0];
+
+	if(thread_info[current_thread].reloc_restore != NULL)
+		thread_info[current_thread].reloc_restore(current_thread, thread_info[current_thread].reloc_information, a + 1);
+	else {
+		a[EBP_ADDR_IDX + 1] = thread_ebp[0];
+		a[RET_ADDR_IDX + 1] = thread_ret[0];
+	}
 	/* NORETURN: Jumps to thread#0 */
 }
 
@@ -204,6 +216,37 @@ static void grow_stack_and_safeguard_launch(int size) {
 	/* NORETURN: safeguard_launch */
 }
 
+void sthread_stack_save(int cur_thread, void **reloc_information, void **baseline)
+{
+	register void ***info;
+	if(*reloc_information == NULL)
+		*reloc_information = malloc(sizeof(void**) * 2);
+	if(*reloc_information == NULL) {
+		perror("sthread_stack_save");
+		exit(7);
+	}
+
+	info = *reloc_information;
+
+	if(current_thread > -1) {
+		info[0] = baseline[EBP_ADDR_IDX];
+		info[1] = baseline[RET_ADDR_IDX];
+	}
+}
+
+void sthread_stack_restore(int cur_thread, void **reloc_information, void **cur_baseline)
+{
+	register void ***info = *reloc_information;
+	
+	if(info == NULL || !thread_info[cur_thread].started) {
+		grow_stack_and_safeguard_launch(DEFAULT_GROW_SIZE);
+	}
+
+	printf("Changing stuff..\n");
+
+	cur_baseline[EBP_ADDR_IDX] = info[0];
+	cur_baseline[RET_ADDR_IDX] = info[1];
+}
 
 static char _yield_mutex = 0;
 static void _yield() 
@@ -220,14 +263,16 @@ static void _yield()
 
 	if(current_thread > -1) {
 		if(thread_info[current_thread].reloc_save != NULL) {
-			(*thread_info[current_thread].reloc_save)(current_thread, &thread_info[current_thread].reloc_information);
+			printf("Saving stuff..\n");
+			(*thread_info[current_thread].reloc_save)(current_thread, &thread_info[current_thread].reloc_information, a);
 		} else {
+			printf("ERROR. RELOC_SAVE UNSET\n");
+			exit(7);
+			printf("Saving stuff without things explicitly done..\n");
 			thread_ebp[current_thread] = a[EBP_ADDR_IDX];
 			thread_ret[current_thread] = a[RET_ADDR_IDX];
 		}
 	}
-
-	copy_stack_to_heap(a, thread_ebp[0]);
 
 	/* We loop exactly once through our circular thread_info list.
 	 * If we find a ready thread (or loop the list completely) we stop.
@@ -248,7 +293,7 @@ static void _yield()
 	*/
 
 	if(thread_info[current_thread].reloc_restore != NULL) {
-		(*thread_info[current_thread].reloc_restore)(current_thread, &thread_info[current_thread].reloc_information);
+		(*thread_info[current_thread].reloc_restore)(current_thread, &thread_info[current_thread].reloc_information, a);
 	} else {
 		if(!thread_info[current_thread].started) {
 			/* Grow the stack to fit a new thread  and launch it */

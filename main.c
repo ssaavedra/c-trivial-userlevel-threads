@@ -22,7 +22,7 @@ void *t1(void *arg)
 	if(*(int*)arg < 2) {
 		(*(int*)arg)++;
 		printf("[T1]: Calling recursively (arg=%d).\n", *(int*)arg);
-		//yield();
+		yield();
 		t1(arg);
 		if(arg == NULL) {
 			printf("[T1]: ARG IS NULL, WTF?!\n");
@@ -36,7 +36,7 @@ void *t1(void *arg)
 	for(i = 0; i < 10; i++) {
 		printf("I am thread 1 and I'm looping at %d\n", i);
 		slow();
-		//yield();
+		yield();
 	}
 	printf("t1 ended!\n");
 	return NULL;
@@ -72,7 +72,7 @@ void *t2(void *arg)
 	for(i = 10; i < 20; i++) {
 		printf("I am thread 2 and I'm looping at %d\n", i);
 		slow();
-		//yield();
+		yield();
 	}
 	printf("t2 ended!\n");
 	return NULL;
