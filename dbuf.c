@@ -110,6 +110,7 @@ void copy_double_buffered(char *src, char *dst)
 		exit(0);
 	}
 	fstat(_tmp_data.fildes_src, &s);
+	ftruncate(_tmp_data.fildes_dst, s.st_size);
 
 	_tmp_data.total_bytes = s.st_size;
 
