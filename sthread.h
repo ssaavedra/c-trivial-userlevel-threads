@@ -99,5 +99,12 @@ extern void _sthread_cleanup_init(sthread_t);
  */
 void sthread_auto_yield(int value);
 
+
+
+#ifdef _STHREAD_INTERNALS_
+sthread_fun_t sthread__get_function(int thread);
+sthread_arg_t sthread__get_arg(int thread);
+#endif /* _STHREAD_INTERNALS_ */
+
 #endif
 

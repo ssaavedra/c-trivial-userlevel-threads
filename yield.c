@@ -21,8 +21,8 @@
 
 #include "log.h"
 #include "yield.h"
-
-#include "sthread_relocate.c"
+#include "extra/stack.h"
+#include "extra/heap.h"
 
 #ifndef EBP_ADDR_IDX
 
@@ -55,13 +55,10 @@ static int current_thread = 0;
 static void *thread_ebp[MAX_THREADS + 1];
 static void *thread_ret[MAX_THREADS + 1];
 
-
-static void sthread_stack_save(int, void**, void**);
-static void sthread_stack_restore(int, void**, void**);
-
-typedef void (*sthread_reloc_fun_t)(int /* current_thread */, void ** /* first frame */);
-static void (*reloc_save_default)(int, void**, void**) = sthread_stack_save;
-static void (*reloc_restore_default)(int, void**, void**) = sthread_stack_restore;
+typedef void (*sthread_reloc_fun_t)(int /* current_thread */, void ** /* info */, void ** /*ebp*/, void ** /*ret*/);
+typedef void (*sthread_exit_fun_t)(int /* thread */, void ** /* info */);
+static void (*reloc_save_default)(int, void**, void**, void**) = sthread_heap_save;
+static void (*reloc_restore_default)(int, void**, void**, void**) = sthread_heap_restore;
 
 static struct sthread_info {
 	sthread_fun_t f_ptr;
@@ -69,8 +66,9 @@ static struct sthread_info {
 	int started;
 	void *retval;
 	void *reloc_information;
-	void (*reloc_save)(int, void**, void**);
-	void (*reloc_restore)(int, void**, void**);
+	sthread_reloc_fun_t reloc_save;
+	sthread_reloc_fun_t reloc_restore;
+	sthread_exit_fun_t reloc_exit;
 } thread_info[MAX_THREADS];
 
 /* Get an available thread. If we can reuse an already-joined thread, we'll use
@@ -89,6 +87,9 @@ static int _alloc_avail_thread() {
 }
 
 
+#ifdef sthread_create4
+#undef sthread_create4
+#endif
 int sthread_create4(sthread_t *tid, const sthread_fun_t f, const sthread_arg_t a, int yield_now)
 {
 	if(!_initd) sthread_init();
@@ -123,6 +124,7 @@ int sthread_init()
 	thread_info[0].started = TS_RUNNING;
 	thread_info[0].reloc_save = sthread_stack_save;
 	thread_info[0].reloc_restore = sthread_stack_restore;
+	thread_info[0].reloc_exit = NULL;
 	return 0;
 }
 
@@ -163,20 +165,20 @@ int sthread_join(sthread_t thread, void **retval)
 	return 0;
 }
 
-void sthread_exit(void *retval)
-{
-	thread_info[current_thread].retval = retval;
-	thread_info[current_thread].started = TS_FINISHED;
-	yield();
-	/* NORETURN */
-}
-
 void _sthread_force_exit(sthread_t thread, void *retval)
 {
 	thread_info[thread].retval = retval;
 	thread_info[thread].started = TS_FINISHED;
+	if(thread_info[thread].reloc_exit != NULL)
+		thread_info[thread].reloc_exit(thread, &thread_info[thread].reloc_information);
 }
 
+void sthread_exit(void *retval)
+{
+	_sthread_force_exit(current_thread, retval);
+	yield();
+	/* NORETURN */
+}
 
 static void safeguard_launch() {
 	void *a[10];
@@ -201,7 +203,7 @@ static void safeguard_launch() {
 	 */
 
 	if(thread_info[current_thread].reloc_restore != NULL)
-		thread_info[current_thread].reloc_restore(current_thread, thread_info[current_thread].reloc_information, a + 1);
+		thread_info[current_thread].reloc_restore(current_thread, &thread_info[current_thread].reloc_information, &a[EBP_ADDR_IDX + 1], &a[RET_ADDR_IDX + 1]);
 	else {
 		a[EBP_ADDR_IDX + 1] = thread_ebp[0];
 		a[RET_ADDR_IDX + 1] = thread_ret[0];
@@ -216,38 +218,6 @@ static void grow_stack_and_safeguard_launch(int size) {
 	/* NORETURN: safeguard_launch */
 }
 
-void sthread_stack_save(int cur_thread, void **reloc_information, void **baseline)
-{
-	register void ***info;
-	if(*reloc_information == NULL)
-		*reloc_information = malloc(sizeof(void**) * 2);
-	if(*reloc_information == NULL) {
-		perror("sthread_stack_save");
-		exit(7);
-	}
-
-	info = *reloc_information;
-
-	if(current_thread > -1) {
-		info[0] = baseline[EBP_ADDR_IDX];
-		info[1] = baseline[RET_ADDR_IDX];
-	}
-}
-
-void sthread_stack_restore(int cur_thread, void **reloc_information, void **cur_baseline)
-{
-	register void ***info = *reloc_information;
-	
-	if(info == NULL || !thread_info[cur_thread].started) {
-		grow_stack_and_safeguard_launch(DEFAULT_GROW_SIZE);
-	}
-
-	printf("Changing stuff..\n");
-
-	cur_baseline[EBP_ADDR_IDX] = info[0];
-	cur_baseline[RET_ADDR_IDX] = info[1];
-}
-
 static char _yield_mutex = 0;
 static void _yield() 
 {
@@ -259,16 +229,16 @@ static void _yield()
 		errno = EAGAIN;
 		return;
 	}
-	while(__sync_lock_test_and_set(&_yield_mutex, 1));
+	while(__sync_lock_test_and_set(&_yield_mutex, 1) == 1);
 
 	if(current_thread > -1) {
 		if(thread_info[current_thread].reloc_save != NULL) {
-			printf("Saving stuff..\n");
-			(*thread_info[current_thread].reloc_save)(current_thread, &thread_info[current_thread].reloc_information, a);
+			logf(LOG_DEBUG, "Saving thread #%d..\n", current_thread);
+			(*thread_info[current_thread].reloc_save)(current_thread, &thread_info[current_thread].reloc_information, &a[EBP_ADDR_IDX], &a[RET_ADDR_IDX]);
 		} else {
-			printf("ERROR. RELOC_SAVE UNSET\n");
+			logf(LOG_DEBUG, "ERROR. RELOC_SAVE UNSET\n");
 			exit(7);
-			printf("Saving stuff without things explicitly done..\n");
+			logf(LOG_DEBUG, "Saving stuff without things explicitly done..\n");
 			thread_ebp[current_thread] = a[EBP_ADDR_IDX];
 			thread_ret[current_thread] = a[RET_ADDR_IDX];
 		}
@@ -293,17 +263,19 @@ static void _yield()
 	*/
 
 	if(thread_info[current_thread].reloc_restore != NULL) {
-		(*thread_info[current_thread].reloc_restore)(current_thread, &thread_info[current_thread].reloc_information, a);
+		logf(LOG_DEBUG, "Restoring thread #%d..\n", current_thread);
+		(*thread_info[current_thread].reloc_restore)(current_thread, &thread_info[current_thread].reloc_information, &a[EBP_ADDR_IDX], &a[RET_ADDR_IDX]);
 	} else {
 		if(!thread_info[current_thread].started) {
 			/* Grow the stack to fit a new thread  and launch it */
 			__sync_lock_release(&_yield_mutex);
 			safeguard_launch();
 		}
-
 		a[EBP_ADDR_IDX] = thread_ebp[current_thread];
 		a[RET_ADDR_IDX] = thread_ret[current_thread];
+
 	}
+	__sync_lock_release(&_yield_mutex);
 }
 
 void sthread_yield(int n) {
@@ -329,6 +301,16 @@ void sthread_yield(int n) {
 sthread_t sthread_self(void)
 {
 	return current_thread;
+}
+
+sthread_fun_t sthread__get_function(int thread)
+{
+	return thread_info[thread].f_ptr;
+}
+
+sthread_arg_t sthread__get_arg(int thread)
+{
+	return thread_info[thread].arg;
 }
 
 

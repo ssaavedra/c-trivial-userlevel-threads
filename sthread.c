@@ -114,12 +114,13 @@ void _sthread_cleanup_init(sthread_t thread)
 	int i;
 	struct sthread_cancel_info *info = cleanup_functions[thread].info;
 
-	for(i = 1; i < MAX_CANCEL_FUNS; i++)
+	for(i = 1; i < MAX_CANCEL_FUNS; i++) {
 		cleanup_functions[thread].used[i] = 0;
-	cleanup_functions[thread].used[0] = 1;
+		cleanup_functions[thread].info[i].thread_ref = thread;
+		cleanup_functions[thread].info[i].a = STHREAD_CANCELED;
+	}
 
-	info->thread_ref = thread;
-	info->a = STHREAD_CANCELED;
+	cleanup_functions[thread].used[0] = 1;
 
 	cleanup_functions[thread].info[0].f = _sthread_cancel_exitpoint;
 	cleanup_functions[thread].info[0].a = &cleanup_functions[thread].info[0];
@@ -134,7 +135,7 @@ int sthread_once(sthread_once_t *once_control, void (*init_routine)(void))
 {
 	if(*once_control)
 		return 0;
-	(*once_control)++;
+	__sync_lock_test_and_set(once_control, 1);
 	init_routine();
 	return 0;
 }
@@ -143,7 +144,7 @@ int sthread_once(sthread_once_t *once_control, void (*init_routine)(void))
 int sthread_key_create(sthread_key_t *key, void (*destructor)(void*))
 {
 	struct sthread_key *s;
-	s = calloc(1, sizeof(s));
+	s = calloc(1, sizeof(struct sthread_key));
 	if(s == NULL)
 		return -ENOMEM;
 	s->destructor = destructor;

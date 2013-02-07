@@ -10,7 +10,7 @@ run: force main
 	./main
 
 
-main: main.c yield.o sthread.o
+main: main.c sthread.a
 	$(CC) $(CFLAGS) $^ -o $@
 
 factorial: factorial.c yield.o
@@ -35,7 +35,7 @@ yield_s.o: yield.c
 	$(CC) $(CFLAGS) -fPIC $^ -c -o $@
 	$(STRIP) -X -x -g $@
 
-sthread.a: yield.o sthread.o
+sthread.a: yield.o sthread.o extra/stack.o extra/heap.o
 	$(AR) rcs $@ $^
 
 libsthread.so: yield_s.o sthread_s.o
