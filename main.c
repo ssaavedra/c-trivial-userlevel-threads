@@ -10,6 +10,7 @@ void slow() { usleep(500000); }
 void *t1(void *arg)
 {
 	int i;
+	int garbage[500000];
 
 	if(arg == NULL) {
 		i = 0;
@@ -19,7 +20,7 @@ void *t1(void *arg)
 		return NULL;
 	}
 
-	if(*(int*)arg < 2) {
+	if(*(int*)arg < 9) {
 		(*(int*)arg)++;
 		printf("[T1]: Calling recursively (arg=%d).\n", *(int*)arg);
 		yield();

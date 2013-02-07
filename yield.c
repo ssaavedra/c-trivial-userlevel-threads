@@ -22,7 +22,7 @@
 #include "log.h"
 #include "yield.h"
 #include "extra/stack.h"
-#include "extra/heap.h"
+#include "extra/file.h"
 
 #ifndef EBP_ADDR_IDX
 
@@ -57,8 +57,8 @@ static void *thread_ret[MAX_THREADS + 1];
 
 typedef void (*sthread_reloc_fun_t)(int /* current_thread */, void ** /* info */, void ** /*ebp*/, void ** /*ret*/);
 typedef void (*sthread_exit_fun_t)(int /* thread */, void ** /* info */);
-static void (*reloc_save_default)(int, void**, void**, void**) = sthread_heap_save;
-static void (*reloc_restore_default)(int, void**, void**, void**) = sthread_heap_restore;
+static void (*reloc_save_default)(int, void**, void**, void**) = sthread_file_save;
+static void (*reloc_restore_default)(int, void**, void**, void**) = sthread_file_restore;
 
 static struct sthread_info {
 	sthread_fun_t f_ptr;
