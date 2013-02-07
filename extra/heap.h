@@ -1,4 +1,3 @@
-#include <setjmp.h>
 
 #define HEAP_BASEPTR 0x20000000
 #define DEFAULT_HEAP_THREADSIZE 8192
@@ -9,8 +8,6 @@ struct sthread_heap_info {
 	off_t stacksize;
 	off_t maxstacksize;
 	sthread_t threadnum;
-	jmp_buf lastenv;
-	jmp_buf myenv;
 	void *cur_ebp;
 	void *cur_ret;
 	struct sthread_heap_info *nxt;

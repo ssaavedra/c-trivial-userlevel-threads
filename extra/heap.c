@@ -1,5 +1,4 @@
 #define _GNU_SOURCE
-#include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
