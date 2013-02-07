@@ -11,7 +11,8 @@ struct sthread_heap_info {
 	sthread_t threadnum;
 	jmp_buf lastenv;
 	jmp_buf myenv;
-	void *retval;
+	void *cur_ebp;
+	void *cur_ret;
 	struct sthread_heap_info *nxt;
 };
 

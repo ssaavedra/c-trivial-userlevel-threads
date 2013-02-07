@@ -47,6 +47,7 @@ static void sthread_heap_handle_segfault(int signum)
 	{
 		return;
 	}
+	sthread_exit(NULL);
 }
 
 static void sthread_heap_attach_signals()
@@ -112,7 +113,8 @@ void sthread_heap_save(int cur_thread, void **reloc_information, void **ebp, voi
 	sthread_heap_restore_signals();
 
 	if(cur_thread > -1) {
-		setjmp(info->myenv);
+		info->cur_ebp = *ebp;
+		info->cur_ret = *ret;
 	}
 }
 
@@ -132,11 +134,8 @@ void sthread_heap_start_signal(int signal)
 	logf(LOG_DEBUG, "Received signal. Spawning thread.\n");
 
 	retval = (* (sthread__get_function(sthread_self())))(sthread__get_arg(sthread_self()));
-	info->retval = retval;
 
-	info = sthread_heap_find_and_link_info(sthread_self(), &reloc_information);
-	longjmp(info->lastenv, 1);
-	
+	sthread_exit(retval);
 }
 
 void sthread_heap_start(int cur_thread, void **reloc_information, void **ebp, void **ret, sthread_fun_t ptr, sthread_arg_t arg)
@@ -149,22 +148,18 @@ void sthread_heap_start(int cur_thread, void **reloc_information, void **ebp, vo
 
 	logf(LOG_DEBUG, "Spawning stuff..\n");
 
-	info->stackptr = mmap((void*) (HEAP_BASEPTR + (cur_thread << 24)), DEFAULT_HEAP_THREADSIZE, PROT_READ|PROT_WRITE, MAP_ANONYMOUS | MAP_GROWSDOWN | MAP_PRIVATE, -1, 0);
+	info->stackptr = mmap((void*) (long) (HEAP_BASEPTR + (cur_thread << 24)), DEFAULT_HEAP_THREADSIZE, PROT_READ|PROT_WRITE, MAP_ANONYMOUS | MAP_GROWSDOWN | MAP_PRIVATE, -1, 0);
 	info->stacksize = DEFAULT_HEAP_THREADSIZE;
 	info->maxstacksize = info->stacksize;
 
 	s.sa_handler = sthread_heap_start_signal;
-	s.sa_flags = SA_ONSTACK;
+	s.sa_flags = SA_ONSTACK | SA_NODEFER;
 	altstack.ss_sp = info->stackptr;
 	altstack.ss_size = info->stacksize;
 	altstack.ss_flags = 0;
 	sigaltstack(&altstack, &sthread_old_altstack);
 	sigaction(SIGUSR1, &s, NULL);
-	if(setjmp(info->lastenv) == 0) {
-		raise(SIGUSR1);
-	} else {
-		 sthread_exit(info->retval);
-	}
+	raise(SIGUSR1);
 }
 
 
@@ -180,7 +175,8 @@ void sthread_heap_restore(int cur_thread, void **reloc_information, void **ebp, 
 
 		logf(LOG_DEBUG, "Restoring stuff..\n");
 
-		longjmp(info->myenv, 1);
+		*ebp = info->cur_ebp;
+		*ret = info->cur_ret;
 	}
 }
 
