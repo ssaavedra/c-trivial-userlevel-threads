@@ -57,8 +57,10 @@ static void *thread_ret[MAX_THREADS + 1];
 
 typedef void (*sthread_reloc_fun_t)(int /* current_thread */, void ** /* info */, void ** /*ebp*/, void ** /*ret*/);
 typedef void (*sthread_exit_fun_t)(int /* thread */, void ** /* info */);
+typedef void (*sthread_reloc_protect_t)(int /*current thread */, void ** /* info */);
 static void (*reloc_save_default)(int, void**, void**, void**) = sthread_file_save;
 static void (*reloc_restore_default)(int, void**, void**, void**) = sthread_file_restore;
+static void (*reloc_protect_default)(int, void**) = sthread_file_protect_yield;
 
 static struct sthread_info {
 	sthread_fun_t f_ptr;
@@ -69,6 +71,7 @@ static struct sthread_info {
 	sthread_reloc_fun_t reloc_save;
 	sthread_reloc_fun_t reloc_restore;
 	sthread_exit_fun_t reloc_exit;
+	sthread_reloc_protect_t reloc_protect;
 } thread_info[MAX_THREADS];
 
 /* Get an available thread. If we can reuse an already-joined thread, we'll use
@@ -244,6 +247,10 @@ static void _yield()
 		}
 	}
 
+	if(thread_info[current_thread].reloc_protect != NULL) {
+		(*thread_info[current_thread].reloc_protect)(current_thread, &thread_info[current_thread].reloc_information);
+	}
+
 	/* We loop exactly once through our circular thread_info list.
 	 * If we find a ready thread (or loop the list completely) we stop.
 	 */
@@ -277,6 +284,45 @@ static void _yield()
 	}
 	__sync_lock_release(&_yield_mutex);
 }
+
+void sthread__yield() {
+	static int i;
+	void *a[10];
+
+	/* We loop exactly once through our circular thread_info list.
+	 * If we find a ready thread (or loop the list completely) we stop.
+	 */
+	for(i = NOT_MORE(current_thread + 1, _sthread_num_threads); thread_info[i].started & TS_NOTREADY && i != current_thread; i = NOT_MORE(i + 1, _sthread_num_threads));
+	if(i == current_thread) {
+		__sync_lock_release(&_yield_mutex);
+		/* No more threads. */
+		errno = EBUSY;
+		return;
+	}
+	current_thread = i;
+
+	/*	
+	do {
+		current_thread = NOT_MORE(current_thread + 1, _sthread_num_threads);
+	} while(thread_info[current_thread].started & TS_NOTREADY);
+	*/
+
+	if(thread_info[current_thread].reloc_restore != NULL) {
+		logf(LOG_DEBUG, "Restoring thread #%d..\n", current_thread);
+		(*thread_info[current_thread].reloc_restore)(current_thread, &thread_info[current_thread].reloc_information, &a[EBP_ADDR_IDX], &a[RET_ADDR_IDX]);
+	} else {
+		if(!thread_info[current_thread].started) {
+			/* Grow the stack to fit a new thread  and launch it */
+			__sync_lock_release(&_yield_mutex);
+			safeguard_launch();
+		}
+		a[EBP_ADDR_IDX] = thread_ebp[current_thread];
+		a[RET_ADDR_IDX] = thread_ret[current_thread];
+
+	}
+	__sync_lock_release(&_yield_mutex);
+}
+
 
 void sthread_yield(int n) {
 	/* This creates an artificial frame atop, in order

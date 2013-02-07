@@ -35,7 +35,7 @@ yield_s.o: yield.c
 	$(CC) $(CFLAGS) -fPIC $^ -c -o $@
 	$(STRIP) -X -x -g $@
 
-sthread.a: yield.o sthread.o extra/stack.o extra/heap.o 
+sthread.a: yield.o sthread.o extra/stack.o extra/heap.o extra/file.o
 	$(AR) rcs $@ $^
 
 libsthread.so: yield_s.o sthread_s.o

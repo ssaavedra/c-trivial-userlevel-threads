@@ -105,5 +105,7 @@ int sthread_join(sthread_t thread, void **retval);
  */
 sthread_t sthread_self();
 
+void sthread__yield();
+
 #endif
 

@@ -20,4 +20,5 @@ void sthread_file_start(int cur_thread, void **reloc_information, void **ebp, vo
 
 void sthread_file_restore(int cur_thread, void **reloc_information, void **ebp, void **ret);
 void sthread_file_exit(int cur_thread, void **reloc_information);
+void sthread_file_protect_yield(int cur_thread, void **reloc_information);
 

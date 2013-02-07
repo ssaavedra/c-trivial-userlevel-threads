@@ -145,7 +145,18 @@ void sthread_file_exit(int cur_thread, void **reloc_information)
 
 
 static char sthread_file_yield_stack[5000];
+static struct sthread_file_info *last_thread_info = NULL;
 
+void sthread_file_protect_yield_signal(int signum)
+{
+	struct sigaction s;
+	s.sa_handler = SIG_DFL;
+	s.sa_flags = 0;
+	sigaction(SIGUSR2, &s, NULL);
+	if(last_thread_info != NULL)
+		munmap(last_thread_info->stackptr, last_thread_info->stacksize);
+	sthread__yield();
+}
 
 void sthread_file_protect_yield(int cur_thread, void **reloc_information)
 {
@@ -153,9 +164,11 @@ void sthread_file_protect_yield(int cur_thread, void **reloc_information)
 	struct sigaction s;
 	stack_t altstack;
 
+	last_thread_info = *reloc_information;
+
 	s.sa_handler = sthread_file_protect_yield_signal;
 	s.sa_flags = SA_ONSTACK | SA_NODEFER;
-	altstack.ss_sp = malloc(5000);
+	altstack.ss_sp = sthread_file_yield_stack;
 	altstack.ss_size = 5000;
 	altstack.ss_flags = 0;
 	sigaltstack(&altstack, &sthread_old_altstack);
