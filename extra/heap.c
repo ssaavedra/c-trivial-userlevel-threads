@@ -34,6 +34,7 @@ static int sthread_heap_enlarge()
 		newsize = MIN(ptr->stacksize + DEFAULT_HEAP_GROW_SIZE, ptr->maxstacksize);
 
 		ptr->stackptr = mremap(ptr->stackptr, ptr->stacksize, newsize, 0);
+		ptr->stacksize = newsize;
 	}
 
 }
